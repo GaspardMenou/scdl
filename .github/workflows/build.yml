@@ -1,0 +1,92 @@
+name: Build
+
+# PyInstaller ne compile que pour le système sur lequel il tourne : on construit
+# donc chaque application sur son propre runner.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install yt-dlp mutagen
+      - name: Tests du nettoyage des titres et des genres
+        run: python tests/test_meta.py
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macos-apple-silicon
+          - os: macos-13
+            label: macos-intel
+          - os: windows-latest
+            label: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp mutagen imageio-ffmpeg pyinstaller
+
+      - name: Construction
+        run: python build.py
+
+      - name: Empaquetage macOS
+        if: runner.os == 'macOS'
+        run: |
+          xattr -cr dist/scdl.app
+          codesign --force --deep --sign - dist/scdl.app || true
+          ditto -c -k --keepParent dist/scdl.app "scdl-${{ matrix.label }}.zip"
+
+      - name: Empaquetage Windows
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/scdl/* -DestinationPath "scdl-${{ matrix.label }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scdl-${{ matrix.label }}
+          path: scdl-${{ matrix.label }}.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          body: |
+            Applications autonomes : rien à installer, ni Python ni ffmpeg.
+
+            - **macOS Apple Silicon** — `scdl-macos-apple-silicon.zip`
+            - **macOS Intel** — `scdl-macos-intel.zip`
+            - **Windows** — `scdl-windows.zip`
+
+            Les applications ne sont pas signées par un certificat payant :
+            au premier lancement, faites un clic droit puis « Ouvrir » sur macOS,
+            ou « Informations complémentaires » puis « Exécuter quand même » sur Windows.

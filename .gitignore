@@ -1,0 +1,12 @@
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.py[cod]
+
+# bibliothèque locale et fichiers de travail
+*.m3u
+*.m3u8
+.scdl-archive.txt
+.DS_Store
