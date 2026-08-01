@@ -44,6 +44,17 @@ L'application n'est pas signée par un certificat payant. Au premier lancement :
 clic droit puis **Ouvrir** sur macOS, ou **Informations complémentaires** puis
 **Exécuter quand même** sur Windows.
 
+### Premier lancement et mises à jour
+
+Au tout premier démarrage, l'application télécharge **ffmpeg** (47 Mo, quelques
+secondes) et le range dans son dossier de données. Il n'est jamais retéléchargé
+ensuite — c'est ce qui permet à l'application elle-même de ne peser que 39 Mo.
+
+Quand une nouvelle version paraît, un bandeau le signale au lancement. Un clic
+sur **Mettre à jour** télécharge et installe la nouvelle version, puis relance
+l'application. Seule l'application est remplacée : ffmpeg et votre bibliothèque
+ne bougent pas.
+
 ## En ligne de commande
 
 L'application fait aussi office d'outil terminal :
@@ -76,7 +87,7 @@ conservé tel quel, jamais perdu.
 ## Développement
 
 ```
-pip install yt-dlp mutagen imageio-ffmpeg pyinstaller
+pip install yt-dlp mutagen pyinstaller
 python tests/test_meta.py     # suite de non-régression
 python app/main.py            # lance l'interface
 python build.py               # construit l'application du système courant

@@ -7,7 +7,7 @@ PyInstaller ne sait pas compiler pour un autre système que celui sur lequel il
 tourne : lance ce script sur macOS pour le .app, sur Windows pour le .exe, sur
 Linux pour le binaire. Le résultat atterrit dans dist/.
 
-Prérequis :  pip install yt-dlp mutagen imageio-ffmpeg pyinstaller
+Prérequis :  pip install yt-dlp mutagen pyinstaller
 """
 from __future__ import annotations
 
@@ -30,12 +30,12 @@ def main() -> int:
         except (AttributeError, ValueError):
             pass
 
-    for module in ("yt_dlp", "mutagen", "imageio_ffmpeg", "PyInstaller"):
+    for module in ("yt_dlp", "mutagen", "PyInstaller"):
         try:
             __import__(module)
         except ImportError:
             print(f"Manquant : {module}. Lance d'abord :\n"
-                  f"  {sys.executable} -m pip install yt-dlp mutagen imageio-ffmpeg pyinstaller")
+                  f"  {sys.executable} -m pip install yt-dlp mutagen pyinstaller")
             return 1
 
     for stale in ("build", "dist"):
@@ -50,12 +50,11 @@ def main() -> int:
         "--add-data", f"{ROOT / 'genres.conf'}{SEP}.",
         "--add-data", f"{ROOT / 'icon-32.png'}{SEP}.",
         "--add-data", f"{ROOT / 'icon-64.png'}{SEP}.",
-        # le ffmpeg statique fourni par imageio-ffmpeg
-        "--collect-binaries", "imageio_ffmpeg",
         # yt-dlp charge ses extracteurs dynamiquement
         "--collect-submodules", "yt_dlp",
         "--hidden-import", "genres", "--hidden-import", "meta", "--hidden-import", "core",
-        "--hidden-import", "gui",
+        "--hidden-import", "gui", "--hidden-import", "updater",
+        "--hidden-import", "version",
         str(APP / "main.py"),
     ]
     icon = ROOT / "scdl.icns" if sys.platform == "darwin" else ROOT / "scdl.ico"

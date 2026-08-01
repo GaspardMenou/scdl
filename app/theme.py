@@ -190,6 +190,175 @@ class AccentButton(tk.Canvas):
             self.command()
 
 
+class RoundedField(tk.Canvas):
+    """Base des champs dessinés : rectangle arrondi qui réagit au survol et au
+    focus. ttk ne sait pas arrondir ses widgets, on peint donc le fond nous-même
+    et on pose la vraie zone de saisie par-dessus."""
+
+    HEIGHT = 36
+    RADIUS = 8
+    PAD_X = 12
+
+    def __init__(self, parent, colors: dict[str, str], height: int | None = None):
+        super().__init__(parent, height=height or self.HEIGHT, highlightthickness=0,
+                         bd=0, bg=colors["bg"])
+        self.colors = colors
+        self._focused = False
+        self._hover = False
+        self.bind("<Configure>", lambda _e: self._redraw())
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    # -- couleurs -----------------------------------------------------------
+    def _border(self) -> str:
+        c = self.colors
+        if self._focused:
+            return c["accent"]
+        return c["textDim"] if self._hover else c["border"]
+
+    def configure_colors(self, colors: dict[str, str]) -> None:
+        self.colors = colors
+        self.configure(bg=colors["bg"])
+        self._recolor_children()
+        self._redraw()
+
+    def _recolor_children(self) -> None:
+        pass
+
+    # -- rendu --------------------------------------------------------------
+    def _redraw(self) -> None:
+        self.delete("bg")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 1:
+            return
+        round_rect(self, 1, 1, w - 1, h - 1, self.RADIUS, fill=self.colors["fieldBg"],
+                   outline=self._border(), width=1, tags="bg")
+        self.tag_lower("bg")
+        self._layout(w, h)
+
+    def _layout(self, width: int, height: int) -> None:
+        pass
+
+    def _on_enter(self, _e) -> None:
+        self._hover = True
+        self._redraw()
+
+    def _on_leave(self, _e) -> None:
+        self._hover = False
+        self._redraw()
+
+    def _on_focus(self, focused: bool) -> None:
+        self._focused = focused
+        self._redraw()
+
+
+class TextField(RoundedField):
+    """Champ de saisie sur fond arrondi."""
+
+    def __init__(self, parent, colors: dict[str, str], placeholder: str = "",
+                 mono: bool = False, width: int | None = None):
+        super().__init__(parent, colors)
+        self.placeholder = placeholder
+        family = mono_family() if mono else ""
+        self.entry = tk.Entry(self, bd=0, relief="flat", highlightthickness=0,
+                              bg=colors["fieldBg"], fg=colors["text"],
+                              insertbackground=colors["text"], font=(family, 12))
+        if width:
+            self.entry.configure(width=width)
+        self._window = self.create_window(self.PAD_X, self.HEIGHT / 2,
+                                          window=self.entry, anchor="w")
+        self.entry.bind("<FocusIn>", lambda _e: self._on_focus(True))
+        self.entry.bind("<FocusOut>", lambda _e: self._on_focus(False))
+        self.entry.bind("<Enter>", self._on_enter)
+
+    def _recolor_children(self) -> None:
+        c = self.colors
+        self.entry.configure(bg=c["fieldBg"], fg=c["text"], insertbackground=c["text"])
+
+    def _layout(self, width: int, height: int) -> None:
+        self.coords(self._window, self.PAD_X, height / 2)
+        self.itemconfigure(self._window, width=max(20, width - 2 * self.PAD_X))
+
+    def get(self) -> str:
+        return self.entry.get()
+
+    def set(self, value: str) -> None:
+        self.entry.delete(0, "end")
+        self.entry.insert(0, value)
+
+
+class TextArea(RoundedField):
+    """Zone de saisie multiligne sur fond arrondi."""
+
+    def __init__(self, parent, colors: dict[str, str], lines: int = 3):
+        height = 22 * lines + 20
+        super().__init__(parent, colors, height=height)
+        self.text = tk.Text(self, bd=0, relief="flat", highlightthickness=0, wrap="word",
+                            bg=colors["fieldBg"], fg=colors["text"],
+                            insertbackground=colors["text"],
+                            font=(mono_family(), 12), height=lines)
+        self._window = self.create_window(self.PAD_X, 10, window=self.text, anchor="nw")
+        self.text.bind("<FocusIn>", lambda _e: self._on_focus(True))
+        self.text.bind("<FocusOut>", lambda _e: self._on_focus(False))
+
+    def _recolor_children(self) -> None:
+        c = self.colors
+        self.text.configure(bg=c["fieldBg"], fg=c["text"], insertbackground=c["text"])
+
+    def _layout(self, width: int, height: int) -> None:
+        self.itemconfigure(self._window, width=max(20, width - 2 * self.PAD_X),
+                           height=max(20, height - 20))
+
+    def get(self) -> str:
+        return self.text.get("1.0", "end")
+
+
+class Select(RoundedField):
+    """Menu déroulant dessiné : rectangle arrondi, libellé et chevron.
+    À l'ouverture on montre un tk.Menu natif, qui gère seul clavier et écrans."""
+
+    def __init__(self, parent, colors: dict[str, str], values: list[str],
+                 on_change=None):
+        super().__init__(parent, colors)
+        self.values = list(values)
+        self.on_change = on_change
+        self.variable = tk.StringVar(value=self.values[0] if self.values else "")
+        self.configure(cursor="hand2")
+        self.bind("<Button-1>", self._open)
+
+    def _layout(self, width: int, height: int) -> None:
+        self.delete("content")
+        c = self.colors
+        self.create_text(self.PAD_X, height / 2, anchor="w", text=self.variable.get(),
+                         fill=c["text"], font=("", 12), tags="content")
+        x = width - 18
+        y = height / 2 - 2
+        self.create_line(x - 5, y, x, y + 5, x + 5, y, fill=c["textMid"], width=2,
+                         capstyle="round", joinstyle="round", tags="content")
+
+    def _open(self, event) -> None:
+        menu = tk.Menu(self, tearoff=0)
+        for value in self.values:
+            menu.add_radiobutton(label=value, variable=self.variable, value=value,
+                                 command=self._changed)
+        try:
+            menu.tk_popup(self.winfo_rootx(), self.winfo_rooty() + self.winfo_height())
+        finally:
+            menu.grab_release()
+
+    def _changed(self) -> None:
+        self._redraw()
+        if self.on_change:
+            self.on_change(self.variable.get())
+
+    def get(self) -> str:
+        return self.variable.get()
+
+    def set(self, value: str) -> None:
+        self.variable.set(value)
+        self._redraw()
+
+
 class Checkbox(tk.Frame):
     """Case à cocher dessinée : carré arrondi rempli à l'accent quand cochée."""
 

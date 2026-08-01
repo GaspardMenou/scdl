@@ -7,9 +7,11 @@ mutagen sont utilisés comme bibliothèques, seul ffmpeg reste un binaire extern
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import sys
 import tempfile
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -44,46 +46,91 @@ def apple_music_autoadd() -> Path | None:
     return next((p for p in candidates if p.is_dir()), None)
 
 
-def _link_as_ffmpeg(binary: Path) -> str | None:
-    """yt-dlp cherche un exécutable nommé « ffmpeg » dans le dossier qu'on lui
-    donne. Le binaire d'imageio-ffmpeg porte un nom versionné, on lui fabrique
-    donc un alias stable dans un dossier de cache."""
-    exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    cache = Path(tempfile.gettempdir()) / "scdl-ffmpeg"
-    cache.mkdir(parents=True, exist_ok=True)
-    alias = cache / exe
-    try:
-        if not alias.exists():
-            if sys.platform == "win32":
-                shutil.copy2(binary, alias)
-            else:
-                alias.symlink_to(binary)
-        os.chmod(alias, 0o755)
-        return str(cache)
-    except OSError:
-        return None
+# ffmpeg pèse 47 Mo à lui seul : le sortir du bundle ramène l'application à
+# quelques mégaoctets, et permet de ne mettre à jour qu'elle. Il est téléchargé
+# une fois au premier lancement, puis conservé.
+FFMPEG_BASE = "https://github.com/imageio/imageio-binaries/raw/master/ffmpeg"
+FFMPEG_BUILDS = {
+    ("darwin", "arm64"): "ffmpeg-macos-aarch64-v7.1",
+    ("darwin", "x86_64"): "ffmpeg-macos-x86_64-v7.1",
+    ("win32", "x86_64"): "ffmpeg-win-x86_64-v7.1.exe",
+}
+
+
+def _arch() -> str:
+    machine = platform.machine().lower()
+    if machine in ("arm64", "aarch64"):
+        return "arm64"
+    return "x86_64"
+
+
+def exe_name() -> str:
+    return "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+
+
+def data_dir() -> Path:
+    """Dossier de données de l'application, propre à chaque système."""
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    path = base / "scdl"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def cached_ffmpeg() -> Path:
+    return data_dir() / "bin" / exe_name()
 
 
 def ffmpeg_dir() -> str | None:
-    """Dossier contenant ffmpeg : embarqué dans l'app, fourni par pip, ou système."""
-    exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    bundled = resource_dir() / "bin"
-    if (bundled / exe).exists():
-        return str(bundled)
-    try:
-        import imageio_ffmpeg
-        binary = Path(imageio_ffmpeg.get_ffmpeg_exe())
-        if binary.exists():
-            return str(binary.parent) if binary.name.startswith("ffmpeg.") \
-                else _link_as_ffmpeg(binary)
-    except Exception:                     # noqa: BLE001
-        pass
+    """Dossier contenant ffmpeg : téléchargé, embarqué, ou celui du système."""
+    cached = cached_ffmpeg()
+    if cached.exists():
+        return str(cached.parent)
+    bundled = resource_dir() / "bin" / exe_name()
+    if bundled.exists():
+        return str(bundled.parent)
     system = shutil.which("ffmpeg")
     return str(Path(system).parent) if system else None
 
 
 def ffmpeg_available() -> bool:
     return ffmpeg_dir() is not None
+
+
+def download_ffmpeg(progress: Callable[[str, float], None] | None = None) -> Path:
+    """Récupère ffmpeg pour ce système et le range dans le dossier de données."""
+    notify = progress or (lambda msg, pct: None)
+    build = FFMPEG_BUILDS.get((sys.platform, _arch()))
+    if build is None:
+        raise RuntimeError(
+            f"Aucun ffmpeg pré-compilé pour {sys.platform}/{_arch()}.\n"
+            "Installez ffmpeg vous-même, l'application le détectera.")
+
+    target = cached_ffmpeg()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".part")
+
+    notify("Téléchargement de ffmpeg (une seule fois)…", 0.0)
+    with urllib.request.urlopen(f"{FFMPEG_BASE}/{build}", timeout=60) as response:
+        total = int(response.headers.get("Content-Length") or 0)
+        done = 0
+        with partial.open("wb") as out:
+            while chunk := response.read(262144):
+                out.write(chunk)
+                done += len(chunk)
+                if total:
+                    notify(f"Téléchargement de ffmpeg — {done // 1048576} / "
+                           f"{total // 1048576} Mo", done / total)
+
+    partial.replace(target)               # remplacement atomique : jamais de binaire tronqué
+    if sys.platform != "win32":
+        os.chmod(target, 0o755)
+    notify("ffmpeg installé.", 1.0)
+    return target
 
 
 # --------------------------------------------------------------- options ---

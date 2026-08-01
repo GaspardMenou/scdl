@@ -6,12 +6,14 @@ import threading
 import tkinter as tk
 import webbrowser
 from pathlib import Path
-from tkinter import BOTH, END, PhotoImage, StringVar, Tk, filedialog, messagebox, ttk
+from tkinter import BOTH, END, PhotoImage, Tk, filedialog, messagebox, ttk
 
 import core
 import theme as th
+import updater
 from core import Downloader, Options
 from genres import resource_dir
+from version import __version__
 
 DESTINATIONS = [
     ("Rekordbox (dossier DJ)", "dj"),
@@ -43,14 +45,17 @@ class App:
         th.apply_ttk(self.colors)
         root.configure(bg=self.colors["bg"])
         self._build()
-        if not core.ffmpeg_available():
-            self._set_status("ffmpeg introuvable — la conversion échouera.", "error")
         self.root.after(100, self._drain)
+        # ffmpeg au premier lancement et recherche de mise à jour : en tâche de
+        # fond, pour que la fenêtre s'affiche immédiatement.
+        threading.Thread(target=self._bootstrap, daemon=True).start()
 
     # ------------------------------------------------------------ interface ---
     def _build(self) -> None:
         c = self.colors
         self._build_header()
+
+        self._build_banner()
 
         outer = ttk.Frame(self.root, padding=(24, 22, 24, 20))
         outer.pack(fill=BOTH, expand=True)
@@ -66,15 +71,11 @@ class App:
             row=row, column=0, sticky="w", pady=(4, 10))
         row += 1
 
-        self.urls = tk.Text(outer, height=3, wrap="word", relief="flat", bd=0,
-                            bg=c["fieldBg"], fg=c["text"], insertbackground=c["text"],
-                            font=(th.mono_family(), 12), padx=10, pady=8,
-                            highlightthickness=1, highlightbackground=c["border"],
-                            highlightcolor=c["accent"])
+        self.urls = th.TextArea(outer, c, lines=3)
         self.urls.grid(row=row, column=0, sticky="ew")
-        self.urls.bind("<Return>", self._on_return)
-        self.urls.focus()
-        self._themed.append(("text", self.urls))
+        self.urls.text.bind("<Return>", self._on_return)
+        self.urls.text.focus()
+        self._themed.append(("widget", self.urls))
         row += 1
 
         self.separator = ttk.Separator(outer)
@@ -164,6 +165,22 @@ class App:
         self.theme_button.bind("<Button-1>", lambda _e: self._toggle_theme())
         self._themed.append(("chip", self.theme_button))
 
+    def _build_banner(self) -> None:
+        """Bandeau de mise à jour, masqué tant qu'aucune version n'est dispo."""
+        c = self.colors
+        self.banner = tk.Frame(self.root, bg=c["accent"])
+        self.banner_label = tk.Label(self.banner, text="", bg=c["accent"],
+                                     fg=c["onAccent"], font=("", 12))
+        self.banner_label.pack(side="left", padx=(18, 0), pady=9)
+        self.banner_action = tk.Label(self.banner, text="Mettre à jour", bg=c["accent"],
+                                      fg=c["onAccent"], font=("", 12, "bold"),
+                                      cursor="hand2")
+        self.banner_action.pack(side="right", padx=18)
+        self.banner_action.bind("<Button-1>", lambda _e: self._install_update())
+        self._themed += [("banner", self.banner), ("banner", self.banner_label),
+                         ("banner", self.banner_action)]
+        self._pending_update: updater.Release | None = None
+
     def _build_settings(self, parent: ttk.Frame) -> None:
         c = self.colors
 
@@ -173,15 +190,15 @@ class App:
 
         r = 0
         label("Destination", r)
-        self.destination = StringVar(value=DESTINATIONS[0][0])
-        combo = ttk.Combobox(parent, textvariable=self.destination, state="readonly",
-                             values=[name for name, _ in DESTINATIONS])
-        combo.grid(row=r, column=1, sticky="ew", pady=6)
-        combo.bind("<<ComboboxSelected>>", self._on_destination)
-        self.folder_button = ttk.Button(parent, text="Choisir…", style="Ghost.TButton",
-                                        command=self._pick_folder)
+        self.destination = th.Select(parent, c, [name for name, _ in DESTINATIONS],
+                                     on_change=lambda _v: self._on_destination())
+        self.destination.grid(row=r, column=1, sticky="ew", pady=6)
+        self.folder_button = th.AccentButton(parent, "Choisir…", self._pick_folder, c,
+                                             height=36, primary=False)
+        self.folder_button.configure(width=100)
         self.folder_button.grid(row=r, column=2, sticky="w", padx=(10, 0))
-        self.folder_button.state(["disabled"])
+        self.folder_button.set_enabled(False)
+        self._themed += [("widget", self.destination), ("widget", self.folder_button)]
         r += 1
 
         self.folder_label = ttk.Label(parent, text="", style="Dim.TLabel", font=("", 10))
@@ -190,33 +207,36 @@ class App:
         r += 1
 
         label("Qualité", r)
-        self.audio_format = StringVar(value=FORMATS[0][0])
-        ttk.Combobox(parent, textvariable=self.audio_format, state="readonly",
-                     values=[name for name, _ in FORMATS]).grid(
-            row=r, column=1, columnspan=2, sticky="ew", pady=6)
+        self.audio_format = th.Select(parent, c, [name for name, _ in FORMATS])
+        self.audio_format.grid(row=r, column=1, columnspan=2, sticky="ew", pady=6)
+        self._themed.append(("widget", self.audio_format))
         r += 1
 
         label("Compte", r)
-        self.browser = StringVar(value=BROWSERS[0])
-        ttk.Combobox(parent, textvariable=self.browser, state="readonly",
-                     values=BROWSERS, width=12).grid(row=r, column=1, sticky="w", pady=6)
+        self.browser = th.Select(parent, c, BROWSERS)
+        self.browser.configure(width=150)
+        self.browser.grid(row=r, column=1, sticky="w", pady=6)
         ttk.Label(parent, text="cookies du navigateur", style="Dim.TLabel",
                   font=("", 10)).grid(row=r, column=2, sticky="w", padx=(10, 0))
+        self._themed.append(("widget", self.browser))
         r += 1
 
         label("Genre forcé", r)
-        self.genre = ttk.Entry(parent)
+        self.genre = th.TextField(parent, c)
         self.genre.grid(row=r, column=1, columnspan=2, sticky="ew", pady=6)
+        self._themed.append(("widget", self.genre))
         r += 1
 
         label("Limiter à", r)
         limit = ttk.Frame(parent)
         limit.grid(row=r, column=1, columnspan=2, sticky="w", pady=6)
-        self.max_items = StringVar(value="0")
-        ttk.Spinbox(limit, from_=0, to=999, textvariable=self.max_items,
-                    width=5).pack(side="left")
+        self.max_items = th.TextField(limit, c, width=4)
+        self.max_items.configure(width=70)
+        self.max_items.set("0")
+        self.max_items.pack(side="left")
         ttk.Label(limit, text="morceaux (0 = tout)", style="Dim.TLabel",
                   font=("", 10)).pack(side="left", padx=(10, 0))
+        self._themed.append(("widget", self.max_items))
         r += 1
 
         options = ttk.Frame(parent)
@@ -260,6 +280,10 @@ class App:
                 widget.configure(bg=c["headerBg"], fg=c["textDim"])
             elif kind == "chip":
                 widget.configure(bg=c["fieldBg"], fg=c["text"])
+            elif kind == "banner":
+                widget.configure(bg=c["accent"])
+                if isinstance(widget, tk.Label):
+                    widget.configure(fg=c["onAccent"])
             elif kind == "text":
                 widget.configure(bg=c["fieldBg"], fg=c["text"], insertbackground=c["text"],
                                  highlightbackground=c["border"], highlightcolor=c["accent"])
@@ -279,11 +303,11 @@ class App:
 
     def _on_destination(self, _event=None) -> None:
         if self._destination_value() == "folder":
-            self.folder_button.state(["!disabled"])
+            self.folder_button.set_enabled(True)
             if self.custom_folder is None:
                 self._pick_folder()
         else:
-            self.folder_button.state(["disabled"])
+            self.folder_button.set_enabled(False)
             self.folder_label.grid_remove()
 
     def _pick_folder(self) -> None:
@@ -305,7 +329,7 @@ class App:
     def _start(self) -> None:
         if self.worker and self.worker.is_alive():
             return
-        raw = self.urls.get("1.0", END)
+        raw = self.urls.get()
         urls = [u for u in raw.replace(",", " ").split() if u.startswith("http")]
         if not urls:
             messagebox.showwarning("SCDL", "Collez au moins un lien SoundCloud.")
@@ -343,6 +367,52 @@ class App:
         self.worker = threading.Thread(target=self._run, args=(opts, urls), daemon=True)
         self.worker.start()
 
+    # ------------------------------------------------------- premier lancement ---
+    def _bootstrap(self) -> None:
+        """Installe ffmpeg s'il manque, puis regarde s'il existe une mise à jour."""
+        def progress(message: str, pct: float) -> None:
+            self.queue.put(("progress", message, pct))
+
+        if not core.ffmpeg_available():
+            self.queue.put(("busy", True, None))
+            try:
+                core.download_ffmpeg(progress)
+            except Exception as exc:                     # noqa: BLE001
+                self.queue.put(("progress", f"ffmpeg indisponible : {exc}", -1))
+                self.queue.put(("busy", False, None))
+                return
+            self.queue.put(("progress", "Prêt.", 0.0))
+        self.queue.put(("busy", False, None))
+
+        if updater.is_frozen():
+            release = updater.check()
+            if release:
+                self.queue.put(("update", release, None))
+
+    def _show_update(self, release: updater.Release) -> None:
+        self._pending_update = release
+        self.banner_label.configure(
+            text=f"Version {release.version} disponible — vous avez la {__version__}.")
+        self.banner.pack(fill="x", after=self.root.winfo_children()[0])
+
+    def _install_update(self) -> None:
+        release = self._pending_update
+        if not release:
+            return
+        self.banner_action.configure(text="Installation…")
+        self._pending_update = None
+
+        def work() -> None:
+            try:
+                bundle = updater.download(
+                    release, lambda m, p: self.queue.put(("progress", m, p)))
+                updater.apply(bundle)
+                self.queue.put(("quit", None, None))
+            except Exception as exc:                     # noqa: BLE001
+                self.queue.put(("error", f"Mise à jour impossible : {exc}", None))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _run(self, opts: Options, urls: list[str]) -> None:
         def progress(message: str, pct: float) -> None:
             self.queue.put(("progress", message, pct))
@@ -362,6 +432,13 @@ class App:
                     self._on_done(payload)
                 elif kind == "error":
                     self._on_error(payload)
+                elif kind == "busy":
+                    self.button.set_enabled(not payload)
+                elif kind == "update":
+                    self._show_update(payload)
+                elif kind == "quit":
+                    self.root.destroy()
+                    return
         except queue.Empty:
             pass
         self.root.after(100, self._drain)
