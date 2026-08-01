@@ -41,7 +41,8 @@ class App:
         self._themed: list = []          # widgets à recolorer lors du basculement
 
         root.title("SCDL")
-        root.minsize(500, 760)
+        root.minsize(520, 860)            # de quoi laisser respirer la liste des morceaux
+        root.geometry("560x900")
         th.apply_ttk(self.colors)
         root.configure(bg=self.colors["bg"])
         self._build()
@@ -110,7 +111,7 @@ class App:
         results.grid(row=row, column=0, sticky="nsew")
         results.columnconfigure(0, weight=1)
         results.rowconfigure(0, weight=1)
-        self.log = ttk.Treeview(results, columns=("track", "dur"), show="headings", height=5)
+        self.log = ttk.Treeview(results, columns=("track", "dur"), show="headings", height=7)
         self.log.heading("track", text="MORCEAUX TÉLÉCHARGÉS", anchor="w")
         self.log.heading("dur", text="", anchor="e")
         self.log.column("track", anchor="w")
@@ -441,7 +442,10 @@ class App:
                     return
         except queue.Empty:
             pass
-        self.root.after(100, self._drain)
+        # La fenêtre peut être fermée entre deux passages : sans ce garde-fou,
+        # Tk se plaint d'une commande invoquée sur une application détruite.
+        if self.root.winfo_exists():
+            self.root.after(100, self._drain)
 
     def _on_progress(self, message: str, pct: float) -> None:
         if message.startswith("✓"):

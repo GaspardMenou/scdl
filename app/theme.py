@@ -102,8 +102,15 @@ def apply_ttk(colors: dict[str, str]) -> None:
                     bordercolor=c["border"], relief="flat", padding=(12, 7))
     style.map("Ghost.TButton", background=[("active", c["fieldBg"])])
 
-    style.configure("Vertical.TScrollbar", background=c["fieldBg"],
-                    troughcolor=c["bg"], bordercolor=c["bg"], arrowcolor=c["textDim"])
+    # Barre de défilement sans les flèches d'antan : on redéfinit sa structure,
+    # clam ne permet pas de les masquer autrement.
+    style.layout("Vertical.TScrollbar", [
+        ("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
+            ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]}),
+    ])
+    style.configure("Vertical.TScrollbar", background=c["checkOff"], troughcolor=c["listBg"],
+                    bordercolor=c["listBg"], relief="flat", arrowcolor=c["textDim"], width=8)
+    style.map("Vertical.TScrollbar", background=[("active", c["textDim"])])
 
 
 def round_rect(canvas: tk.Canvas, x1: float, y1: float, x2: float, y2: float,
