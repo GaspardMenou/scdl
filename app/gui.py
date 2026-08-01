@@ -161,7 +161,7 @@ class App:
 
         self.theme_button = tk.Label(inner, text=self._theme_label(), bg=c["fieldBg"],
                                      fg=c["text"], font=("", 11), padx=9, pady=4,
-                                     cursor="hand2")
+                                     cursor=th.HAND)
         self.theme_button.pack(side="right")
         self.theme_button.bind("<Button-1>", lambda _e: self._toggle_theme())
         self._themed.append(("chip", self.theme_button))
@@ -175,7 +175,7 @@ class App:
         self.banner_label.pack(side="left", padx=(18, 0), pady=9)
         self.banner_action = tk.Label(self.banner, text="Mettre à jour", bg=c["accent"],
                                       fg=c["onAccent"], font=("", 12, "bold"),
-                                      cursor="hand2")
+                                      cursor=th.HAND)
         self.banner_action.pack(side="right", padx=18)
         self.banner_action.bind("<Button-1>", lambda _e: self._install_update())
         self._themed += [("banner", self.banner), ("banner", self.banner_label),

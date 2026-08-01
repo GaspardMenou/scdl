@@ -31,6 +31,11 @@ LIGHT = {
 }
 
 
+# « hand2 » vient de X11 : macOS le rend en bitmap noir et blanc à l'ancienne
+# au lieu de la main du système. Chaque plateforme a son nom natif.
+HAND = {"darwin": "pointinghand", "win32": "hand2"}.get(sys.platform, "hand2")
+
+
 def system_prefers_dark() -> bool:
     """Thème du système, pour ouvrir l'application dans le bon mode."""
     try:
@@ -131,7 +136,7 @@ class AccentButton(tk.Canvas):
     def __init__(self, parent, text: str, command, colors: dict[str, str],
                  height: int = 44, radius: int = 9, primary: bool = True):
         super().__init__(parent, height=height, highlightthickness=0, bd=0,
-                         bg=colors["bg"], cursor="hand2")
+                         bg=colors["bg"], cursor=HAND)
         self.command = command
         self.colors = colors
         self.radius = radius
@@ -155,7 +160,7 @@ class AccentButton(tk.Canvas):
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
-        self.configure(cursor="hand2" if enabled else "arrow")
+        self.configure(cursor=HAND if enabled else "arrow")
         self._draw()
 
     def _fill(self) -> str:
@@ -330,7 +335,7 @@ class Select(RoundedField):
         self.values = list(values)
         self.on_change = on_change
         self.variable = tk.StringVar(value=self.values[0] if self.values else "")
-        self.configure(cursor="hand2")
+        self.configure(cursor=HAND)
         self.bind("<Button-1>", self._open)
 
     def _layout(self, width: int, height: int) -> None:
@@ -374,10 +379,10 @@ class Checkbox(tk.Frame):
         self.colors = colors
         self.value = bool(value)
         self.box = tk.Canvas(self, width=18, height=18, highlightthickness=0, bd=0,
-                             bg=colors["bg"], cursor="hand2")
+                             bg=colors["bg"], cursor=HAND)
         self.box.pack(side="left")
         self.label = tk.Label(self, text=text, bg=colors["bg"], fg=colors["text"],
-                              font=("", 12), cursor="hand2")
+                              font=("", 12), cursor=HAND)
         self.label.pack(side="left", padx=(9, 0))
         for widget in (self.box, self.label):
             widget.bind("<Button-1>", lambda _e: self.toggle())
