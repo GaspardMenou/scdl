@@ -23,9 +23,11 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parent.parent
 SIZE = 1024                      # on dessine grand, on réduit ensuite
 
-TOP = (124, 58, 237)             # violet
-BOTTOM = (219, 39, 119)          # magenta
-INK = (255, 255, 255)
+# Mêmes teintes que le bouton principal de l'application : ambre sur fond
+# chaud sombre. Volontairement éloigné de l'orange de SoundCloud.
+TOP = (229, 156, 98)             # #e59c62
+BOTTOM = (201, 112, 47)          # #c9702f
+INK = (30, 28, 26)               # #1e1c1a
 
 
 def rounded_gradient(size: int) -> Image.Image:
@@ -114,9 +116,10 @@ def main() -> int:
 
     # Version d'en-tête : tkinter ne sait réduire que par facteurs entiers,
     # on lui fournit donc directement la bonne taille.
-    header = ROOT / "icon-64.png"
-    icon.resize((64, 64), Image.LANCZOS).save(header)
-    print(f"ecrit {header.relative_to(ROOT)}")
+    for px in (32, 64):
+        header = ROOT / f"icon-{px}.png"
+        icon.resize((px, px), Image.LANCZOS).save(header)
+        print(f"ecrit {header.relative_to(ROOT)}")
 
     ico = ROOT / "scdl.ico"
     icon.save(ico, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])

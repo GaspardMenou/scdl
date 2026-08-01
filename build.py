@@ -48,7 +48,8 @@ def main() -> int:
         "--paths", str(APP),
         # genres.conf est lu à l'exécution : il doit être dans le bundle
         "--add-data", f"{ROOT / 'genres.conf'}{SEP}.",
-        "--add-data", f"{ROOT / 'icon-64.png'}{SEP}.",   # en-tête de la fenêtre
+        "--add-data", f"{ROOT / 'icon-32.png'}{SEP}.",
+        "--add-data", f"{ROOT / 'icon-64.png'}{SEP}.",
         # le ffmpeg statique fourni par imageio-ffmpeg
         "--collect-binaries", "imageio_ffmpeg",
         # yt-dlp charge ses extracteurs dynamiquement
