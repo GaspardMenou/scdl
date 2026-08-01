@@ -35,8 +35,10 @@ Téléchargez l'application depuis la page
 | Système | Fichier |
 |---|---|
 | macOS Apple Silicon | `scdl-macos-apple-silicon.zip` |
-| macOS Intel | `scdl-macos-intel.zip` |
 | Windows | `scdl-windows.zip` |
+
+Les Mac Intel ne sont pas couverts : les runners correspondants sont en fin de
+vie chez GitHub. Sur ces machines, il reste la voie développeur ci-dessous.
 
 L'application n'est pas signée par un certificat payant. Au premier lancement :
 clic droit puis **Ouvrir** sur macOS, ou **Informations complémentaires** puis

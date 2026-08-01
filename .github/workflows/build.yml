@@ -30,10 +30,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Les runners macos-13 (Intel) sont en fin de vie et échouent faute de
+          # ressources : on ne construit que pour Apple Silicon.
           - os: macos-latest
             label: macos-apple-silicon
-          - os: macos-13
-            label: macos-intel
           - os: windows-latest
             label: windows
     runs-on: ${{ matrix.os }}
@@ -84,7 +84,6 @@ jobs:
             Applications autonomes : rien à installer, ni Python ni ffmpeg.
 
             - **macOS Apple Silicon** — `scdl-macos-apple-silicon.zip`
-            - **macOS Intel** — `scdl-macos-intel.zip`
             - **Windows** — `scdl-windows.zip`
 
             Les applications ne sont pas signées par un certificat payant :
