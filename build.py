@@ -22,6 +22,14 @@ SEP = ";" if sys.platform == "win32" else ":"
 
 
 def main() -> int:
+    # La console Windows est en cp1252 : sans cela, le moindre caractère non
+    # latin-1 dans un message fait planter la construction.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     for module in ("yt_dlp", "mutagen", "imageio_ffmpeg", "PyInstaller"):
         try:
             __import__(module)
@@ -50,10 +58,9 @@ def main() -> int:
     ]
     icon = ROOT / "scdl.icns" if sys.platform == "darwin" else ROOT / "scdl.ico"
     if icon.exists():
-        cmd[cmd.index("--windowed") + 1:1] = []          # garde l'ordre lisible
         cmd += ["--icon", str(icon)]
 
-    print("→", " ".join(cmd[:8]), "…")
+    print("-> PyInstaller", " ".join(cmd[3:8]), "...")
     result = subprocess.run(cmd, cwd=ROOT)
     if result.returncode:
         return result.returncode
