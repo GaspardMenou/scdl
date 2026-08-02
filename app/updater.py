@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -111,17 +113,65 @@ def download(release: Release, progress: Callable[[str, float], None] | None = N
 
     notify("Installation…", 1.0)
     extracted = staging / "extracted"
-    with zipfile.ZipFile(archive) as zf:
-        zf.extractall(extracted)
+    extracted.mkdir(parents=True, exist_ok=True)
+    _extract(archive, extracted)
 
-    produced = [p for p in extracted.iterdir()]
     if sys.platform == "darwin":
-        app = next((p for p in produced if p.suffix == ".app"), None)
+        app = next((p for p in extracted.iterdir() if p.suffix == ".app"), None)
         if app is None:
             raise RuntimeError("Archive inattendue : aucun .app à l'intérieur.")
+        _validate(app)
         return app
     # Windows : l'archive contient le contenu du dossier, pas le dossier lui-même
+    _validate(extracted)
     return extracted
+
+
+def _extract(archive: Path, into: Path) -> None:
+    """Décompresse en préservant liens symboliques et permissions.
+
+    zipfile ne fait ni l'un ni l'autre : il écrit les liens comme des fichiers
+    texte contenant leur cible, ce qui détruit un bundle macOS (Python.framework
+    n'est qu'un jeu de liens). ditto, qui a servi à créer l'archive, restitue
+    tout — y compris la signature.
+    """
+    if sys.platform == "darwin" and shutil.which("ditto"):
+        subprocess.run(["ditto", "-x", "-k", str(archive), str(into)],
+                       check=True, capture_output=True)
+        return
+
+    with zipfile.ZipFile(archive) as zf:
+        for info in zf.infolist():
+            target = into / info.filename
+            mode = (info.external_attr >> 16) & 0xFFFF
+            if stat.S_ISLNK(mode):                      # lien symbolique
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists() or target.is_symlink():
+                    target.unlink()
+                target.symlink_to(zf.read(info).decode())
+                continue
+            zf.extract(info, into)
+            if mode & 0o777:                            # permissions d'origine
+                os.chmod(target, mode & 0o777)
+
+
+def _validate(bundle: Path) -> None:
+    """Refuse d'installer un bundle abîmé — mieux vaut échouer que remplacer
+    une application qui marche par une qui ne démarre pas."""
+    if sys.platform == "darwin":
+        executables = list((bundle / "Contents" / "MacOS").glob("*"))
+        framework = bundle / "Contents" / "Frameworks" / "Python"
+        if framework.exists() and not framework.is_symlink():
+            raise RuntimeError("Bundle abîmé : les liens symboliques ont été perdus "
+                               "à la décompression. Mise à jour annulée.")
+    else:
+        executables = list(bundle.glob("*.exe"))
+
+    if not executables:
+        raise RuntimeError("Bundle abîmé : aucun exécutable trouvé. Mise à jour annulée.")
+    if sys.platform != "win32" and not any(os.access(p, os.X_OK) for p in executables):
+        raise RuntimeError("Bundle abîmé : l'exécutable a perdu ses permissions. "
+                           "Mise à jour annulée.")
 
 
 _SWAP_SH = """#!/bin/sh
